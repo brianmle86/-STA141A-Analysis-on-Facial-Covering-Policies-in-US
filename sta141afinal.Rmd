@@ -1,0 +1,260 @@
+---
+title: "Analysis on Facial Covering Policy in United States"
+author: "Brian Le"
+date: "3/14/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(PMCMRplus)
+library(ggpubr)
+library(gridExtra)
+```
+  
+#### 1. Introduce the dataset and the questions of interest. 
+  
+The first dataset I am using is the WHO Covid-19 dataset. It is data collected from 2020-01-03 to the present, containing numbers on deaths and cases for different countries. The Covid-19 dataset from WHO contains 8 variables: Date_reported, Country_code, Country, WHO_region, New_cases, Cumulative_cases, New_deaths, and Cumalative_deaths.
+  
+Additionally, I am using a dataset from Our World in Data which contains data for the facial covering policies different countries enacted. The data is collected for multiple countries, each having data on facial covering policies from 2020-01-03 to 2020-02-15. This dataset contains 4 variables: Entity, Code, Day, and facial_coverings. Entity is a country with Code being it's abbreviation. Day is the date the data is collected. Facial_coverings is a variable which has 5 factor levels:
+  
+* 0: No policy
+  
+* 1: Recommended
+  
+* 2: Required in some public places or when social distancing is not possible
+  
+* 3: Required in all public places or when social distancing is not possible
+  
+* 4: Required outside the home at all times
+
+  
+My question of interest is: **Are facial covering policies associated with lower case-mortality rates in the US?**
+  
+#### 2. Review the background of the coronavirus pandemic. 
+  
+In early 2020, the CDC declared that the coronavirus is a worldwide emergency. Due to the rapidly increasing positivity rate and death rate as well as not having a vaccine, the world was forced to take preventative measures such as wearing masks and social distancing. Daily life changed for most people because of remote work or school and lockdown measures. The CDC has announced several mandates or recommendations to help people control the spread of the virus.
+  
+In the United States, mask mandates were controversial among the people. Some people refused to believe that masks would help contain the spread of the virus, while others were quick to wear face coverings.
+  
+#### 3. Explore this dataset and generate summary statistics that you find informative, and explain your findings. <span style="color:red"> The summary statistics should include at least time, number of cases, number of death, case-mortality rate.</span>
+  
+```{r, echo = FALSE}
+#load data
+covid <- read_csv("https://covid19.who.int/WHO-COVID-19-global-data.csv")
+
+#add column for case-mortality rate as new_deaths/new_cases
+covid$case_mortality_rate <- covid$New_deaths/covid$New_cases
+covid$case_mortality_rate[is.na(covid$case_mortality_rate)] <- 0
+
+us_covid_data <- covid %>% filter(Country_code == "US", Date_reported <= "2022-02-15")
+
+face_covering_data <- read.csv("face-covering-policies-covid.csv", header = TRUE)
+
+us_covering_data <- face_covering_data %>% filter(Code == "USA", Day >= "2020-01-03")
+
+us_covid_data$facial_coverings <- us_covering_data$facial_coverings
+levels(us_covid_data$facial_coverings) <- c("No policy", "Recommended", "Required in some public places", "Required in all public places", "Required outside home")
+
+```
+  
+```{r}
+#new cases scatterplot
+ggplot(us_covid_data, aes(x=Date_reported, y=New_cases)) +
+  geom_point(alpha=0.5) +
+  ylim(0, 1500000) +
+  ggtitle("New Cases")
+
+summary(us_covid_data$New_cases)
+```
+  
+Since January 2020, new cases per day have been steady, barring spikes around the holidays. There is a spike around September 2021, which is around the time schools started reopening for in-person classes. This is a possible explanation for this spike, although it may not be the only one.
+  
+The mean amount of new cases is 99464, while the median is 57445, which indicates the data for new cases is skewed right.
+  
+```{r}
+#new deaths scatterplot
+ggplot(us_covid_data, aes(x=Date_reported, y=New_deaths)) +
+  geom_point(alpha=0.5) +
+  ylim(0, 15000) +
+  ggtitle("New Deaths")
+
+summary(us_covid_data$New_deaths)
+```
+  
+The plot for new deaths per day looks similar to the plot for new cases per day. Both plots have spikes around the same time frames, which is what we would expect.
+  
+The mean amount of new deaths is 1181, while the median is 928, which indicates the data for new deaths is skewed right.
+  
+```{r}
+#case mortality rate scatterplot
+ggplot(us_covid_data, aes(x=Date_reported, y=case_mortality_rate)) +
+  geom_point(alpha=0.5) +
+  ggtitle("Case Mortality Rate")
+
+summary(us_covid_data$case_mortality_rate)
+```
+  
+Aside from a spike around March 2020 when there was global panic surrounding the coronavirus, case mortality rates don't seem to vary much. The plot shows that the case mortality rates are trending downwards over time, albeit by a very small amount.
+  
+The mean case mortality rate is 0.018538, while the median is 0.014104, which indicates that data for case mortality rate is skewed right.
+  
+```{r}
+ggplot(us_covid_data, aes(x=Date_reported, y=case_mortality_rate, color=factor(facial_coverings))) +
+  geom_point(alpha=0.4) +
+  scale_color_manual(values=c("blueviolet", "aquamarine4", "darkgoldenrod2", "cyan3", "deeppink")) +
+  ggtitle("Case Mortality Rate")
+```
+  
+If we take a look at the same plot with dates and case mortality rates, but color the points based on which facial covering policy was active, we can see that the majority of the data has facial_coverings = 3 or facial_coverings = 4. It looks like the change to mandating masks in all public spaces around March 2020 is associated with lowering case mortality rates, but there may be other factors at play, because that was the time lockdowns and closures occurred.
+  
+```{r}
+cmr.k3 <- kmeans(us_covid_data$case_mortality_rate, 3)
+us_covid_data %>% mutate(cluster = cmr.k3$cluster) %>%
+  ggplot(aes(x=Date_reported, y=case_mortality_rate, color = as.factor(cluster))) +
+  geom_point(alpha = 0.5) +
+  ggtitle("Case Mortality Rate k-means, k = 3")
+```
+  
+Here, I'm finding k-means clusters of case mortality rate with k = 3. It appears that there are different clusters where there are peaks in case mortality rate, when it is relatively constant, as well as when there are dips in the plot.
+  
+```{r}
+cmr.k6 <- kmeans(us_covid_data$case_mortality_rate, 6)
+us_covid_data %>% mutate(cluster = cmr.k6$cluster) %>%
+  ggplot(aes(x=Date_reported, y=case_mortality_rate, color = as.factor(cluster))) +
+  geom_point(alpha = 0.5) +
+  ggtitle("Case Mortality Rate k-means, k = 6")
+```
+  
+I'm just choosing an arbitrary value of k = 6 because I want to see the clusters with a higher value of k. Once again the clusters appear around the peaks, dips, and when case mortality rate is about constant. There are most likely other factors that would affect the case mortality rate other than face covering policy, because looking back at the case mortality rate plot colored by policy, we can see that the k-means algorithm identified many clusters (particularly around where case mortality rate peaks and dips) within different levels of facial covering policy.
+  
+```{r}
+ggplot(us_covid_data, aes(x=facial_coverings, y=case_mortality_rate, color=factor(facial_coverings))) +
+  geom_point(alpha = 0.5) +
+  scale_color_manual(values=c("blueviolet", "aquamarine4", "darkgoldenrod2", "cyan3", "deeppink")) +
+  ggtitle("Facial Covering Policy vs. Case Mortality Rate")
+```
+  
+Plotting facial covering policy against case mortality rate, we can see that the spread is similar for factor levels 1, 3, and 4. Factor levels 0 and 2 seem to have more variance, but there is less data for those levels.
+  
+```{r}
+ggplot(us_covid_data, aes(group = facial_coverings, x=facial_coverings, y=case_mortality_rate, color=factor(facial_coverings))) +
+  geom_boxplot(alpha = 0.5) +
+  scale_color_manual(values=c("blueviolet", "aquamarine4", "darkgoldenrod2", "cyan3", "deeppink")) +
+  ggtitle("Facial Covering Policy vs. Case Mortality Rate")
+```
+  
+If we look at a boxplot representation of facial covering policy against case mortality rate, we can see that factor levels 1, 3, and 4 are similar, and 0 and 2 are similar. There seems to be many observations considered outliers for factor level 3.
+  
+#### 4. Propose an appropriate model to answer the questions of interest. 
+      a. Explain your notation. 
+      b. State assumptions for your model. 
+      c. Explain why your model is appropriate for this task. 
+  
+I propose a one-way ANOVA model with case-mortality rate as the response and face covering policy as the predictor.
+  
+The mathematical notation for a one-way ANOVA model is : $$Y_{ij}=μ_{i}+ε_{ij}$$, where i represents the factor level of facial covering policy, $Y_{ij}$ represents the jth observation at the ith factor level, $μ_{i}$ represents the mean case mortality rate at the ith factor level, and $ε_{ij}$ represents the error term at the ith factor level and jth observation.
+  
+The assumptions for a one-way ANOVA model are that the error terms are iid $N(0,\sigma^2)$, and homogeneity of error variances.
+  
+This model is appropriate because I am interested in the association between the different facial covering policies and case mortality rates.
+  
+#### 5. Fit the proposed model in (4) and explain your results. 
+  
+```{r}
+covid_anova_model <- aov(case_mortality_rate ~ factor(facial_coverings), data = us_covid_data)
+summary(covid_anova_model)
+```
+  
+The p-value here is very low, so it suggests that facial covering policy has an effect on case mortality rate.
+  
+```{r}
+differences <- TukeyHSD(covid_anova_model)
+differences
+plot(differences)
+```
+  
+We can use Tukey HSD to test for differences between factor levels. Based on the test, 4-3, 3-2, and 3-0 have different means at $\alpha = 0.05$. When looking at the plot, we can see that the confidence intervals for the differences of those factor levels don't include zero. We can say that there is no significant difference between factors that contain zero in the confidence interval.
+  
+The 3-0 difference is the difference between no policy and required in all public places or when social distancing is not possible. Based on common sense, we can say that having a face covering policy in place does make a difference in case mortality rate. However, the difference between factor levels 4-3 and 3-2 is not quite as obvious. Factor level 3 (Required in all public places or when social distancing is not possible) was the policy when case mortality rate was at a peak, and there was a sharp decline in case mortality rates shortly after. It's possible that the differences between masks at all times and masks in public places policies can be attributed to the case mortality rates around March 2020, when case mortality rates were at their highest.
+  
+```{r}
+residuals <- residuals(covid_anova_model)
+ggplot(us_covid_data, aes(x=facial_coverings,y=residuals, color=factor(facial_coverings))) +
+  geom_point(alpha=0.5) +
+  geom_hline(yintercept = 0, color = "red") +
+  scale_color_manual(values=c("blueviolet", "aquamarine4", "darkgoldenrod2", "cyan3", "deeppink")) +
+  ggtitle("Facial Covering Policy vs. Residuals")
+```
+  
+The residuals appear to be roughly centered around y = 0.
+  
+```{r}
+hist(residuals)
+```
+  
+However looking at a histogram of residuals, it appears that most are on the negative side.
+  
+```{r}
+summary(covid_anova_model)
+```
+  
+We can test if the mean case mortality rate is the same for each level of facial covering policy using an F-test:
+  
+$H_0: \mu_1 = \mu_2 = \cdots = \mu_5$ vs $H_a: {\rm not \ all\ } \mu_i\ {\rm are\ the\ same}$
+  
+We reject the null hypothesis if $F^* > F(0.95; 4, 774)$.
+  
+```{r}
+qf(0.95,4,774)
+```
+  
+$11.16 > 2.383436$, so we reject the null. The mean case mortality rates are not all the same for the different factor levels for facial covering policy.
+  
+#### 6. Conduct model diagnostics and/or sensitivity analysis. 
+  
+```{r}
+par(mfrow=c(2,2))
+plot(covid_anova_model)
+```
+  
+The Residuals vs Fitted plot shows an almost straight line around y = 0, so it indicates that there is a linear relationship between facial covering policy and case mortality rate.
+  
+The Normal Q-Q plot shows that many points deviate from the straight line, and that there are 3 outlier observations. It seems that the residuals are not normally distributed.
+  
+The Scale-Location plot shows that the error variance is roughly equal, as the red line is almost horizontal with a very slight V shape.
+  
+The Residuals vs. Leverage plot shows no points withing Cook's distance, so the 3 outliers we have are not influential.
+  
+```{r}
+bartlett.test(case_mortality_rate ~ facial_coverings, us_covid_data)
+```
+  
+Testing for equal variances among factor levels with Bartlett Test:
+  
+$H_0: \sigma_1=\cdots =\sigma_5$ vs $H_a:$ not all $\sigma$s are equal
+  
+We reject the null hypothesis if the p-value is > 0.05, which it is, so we reject the null. The factor level variances are not all equal.
+  
+#### 7. Conclude your analysis with a discussion of your findings and caveats of your approach. 
+Based on my analysis, facial covering policy is associated with case mortality rate. My findings with the one-way ANOVA model shows that there is a difference between factor level means for case mortality rate. In my cluster analysis, I found that there were clusters around the peaks and dips for case mortality rates over the course of the pandemic. While some clusters were similar with the true data, there were some that could not be explained by only facial covering policy. There are definitely other factors that affect case mortality rates in the United States other than face covering policy. Based on the diagnostic plots, the normality assumption for ANOVA is not met. Although ANOVA is considered robust for non-normal data, I can't say for certain that it wouldn't affect the results. In the F-test, I found that the case mortality rate means for each factor level were not all the same. The F statistic was rather large, which indicates that the data goes against the null hypothesis. Using the Bartlett test for equal variances, I found that the factor level variances were not all equal.
+  
+A flaw in my analysis would be that I didn't consider how many people we conscious of the policies for face coverings. Especially in the United States, people tend to not follow the Covid-19 policies too closely, with one reason being that they are not strictly enforced. My intuition says that case mortality rates would be lower if people closely followed policies.
+
+
+
+  
+### Acknowledgement
+Class notes/lectures
+https://towardsdatascience.com/understanding-k-means-clustering-in-machine-learning-6a6e67336aa1
+  
+https://www.geeksforgeeks.org/bartletts-test-in-r-programming/
+  
+https://bookdown.org/steve_midway/DAR/understanding-anova-in-r.html
+  
+https://www.scribbr.com/statistics/anova-in-r/
+  
+https://stats.stackexchange.com/questions/5680/can-i-trust-anova-results-for-a-non-normally-distributed-dv#
